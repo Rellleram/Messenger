@@ -35,9 +35,9 @@ nickname = input()
 client.send(nickname.encode('utf-8'))
 
 threading.Thread(target=rcv_msg, daemon=True).start()
-
+print('Введите сообщение. Для выхода введите /exit')
 while not stop_flag.is_set():
-    msg = input('Введите сообщение. Для выхода введите /exit\n')
+    msg = input()
     if msg == '/exit':
         client.send('__disconnect__'.encode('utf-8'))
         stop_flag.set()
