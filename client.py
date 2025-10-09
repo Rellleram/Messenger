@@ -1,5 +1,6 @@
 import socket
 import threading
+from cryptography.fernet import Fernet
 
 HOST = '127.0.0.1'
 PORT = 9090
@@ -8,10 +9,16 @@ client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
 stop_flag = threading.Event()
 
+
+def encr(msg):
+    return cipher.encrypt(msg)
+def decr(msg):
+    return cipher.decrypt(msg)
+
 def rcv_msg():
     while not stop_flag.is_set():
         try:
-            msg = client.recv(1024).decode('utf-8')
+            msg = decr(client.recv(1024)).decode('utf-8')
             if not msg:
                 print('Server closed connection')
                 stop_flag.set()
@@ -26,24 +33,26 @@ def rcv_msg():
 try:
     client.connect((HOST, PORT))
     print('Connected to server')
+    key = client.recv(1024)
+    cipher = Fernet(key)
 except ConnectionRefusedError:
     print('Connection failed')
     exit()
 
-print(client.recv(1024).decode('utf-8'))
+print(decr(client.recv(1024)).decode('utf-8'))
 nickname = input()
-client.send(nickname.encode('utf-8'))
+client.send(encr(nickname.encode('utf-8')))
 
 threading.Thread(target=rcv_msg, daemon=True).start()
 print('Введите сообщение. Для выхода введите /exit')
 while not stop_flag.is_set():
     msg = input()
     if msg == '/exit':
-        client.send('__disconnect__'.encode('utf-8'))
+        client.send(encr('__disconnect__'.encode('utf-8')))
         stop_flag.set()
         break
     try:
-        client.send(msg.encode('utf-8'))
+        client.send(encr(msg.encode('utf-8')))
     except:
         print('Не удалось отправить сообщение. Сервер недоступен.')
 

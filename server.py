@@ -1,6 +1,7 @@
 import socket
 import threading
 from multiprocessing import Value
+from cryptography.fernet import Fernet
 import datetime
 
 HOST = '127.0.0.1'
@@ -12,11 +13,18 @@ server.listen()
 
 clients = {}
 
+key = Fernet.generate_key()
+cipher = Fernet(key)
+
+def encr(msg):
+    return cipher.encrypt(msg)
+def decr(msg):
+    return cipher.decrypt(msg)
 
 def broadcast(client_socket, nick, message):
     for client in clients.values():
         if client != client_socket:
-            client.send(f'{datetime.datetime.now().strftime("%H:%M")} [{nick}]: {message.decode("utf-8")}'.encode('utf-8'))
+            client.send(encr(f'{datetime.datetime.now().strftime("%H:%M")} [{nick}]: {message.decode("utf-8")}'.encode('utf-8')))
 
 def server_commands(shutdown):
     while True:
@@ -33,13 +41,11 @@ def server_commands(shutdown):
 def msg_handler(client, nickname, shutdown):
     while not shutdown.value:
         try:
-            msg = client.recv(1024)
+            msg = decr(client.recv(1024))
             if not msg:
                 break   
             elif msg.decode('utf-8') == '__disconnect__':
-                for cl_sckt in clients.values():
-                    if cl_sckt != client:
-                        cl_sckt.send(f'Пользователь {nickname} отлючился от чата.'.encode('utf-8'))
+                broadcast(client, nickname, 'Пользователь вышел из чата!'.encode('utf-8'))
                 break
             
             broadcast(client, nickname, msg)   
@@ -62,15 +68,15 @@ def receive():
     while not shutdown.value:
         try:
             cl_sckt, addr = server.accept()
+            cl_sckt.send(key)
             print(f'Client {addr} connected')
-            cl_sckt.send('Вы подключились к серверу! Введите ваш никнейм'.encode('utf-8'))
+            cl_sckt.send(encr('Вы подключились к серверу! Введите ваш никнейм'.encode('utf-8')))
 
-            cl_nickname = cl_sckt.recv(1024).decode('utf-8')
+            cl_nickname = decr(cl_sckt.recv(1024)).decode('utf-8')
             print(f'Client with address {addr} set nickname:', cl_nickname)
-            for client in clients.values():
-                if client != cl_sckt:
-                    client.send(f'Пользователь {cl_nickname} подключился к чату!'.encode('utf-8'))
             clients[cl_nickname] = cl_sckt
+            
+            broadcast(cl_sckt, cl_nickname, 'Пользователь вошел в чат!'.encode('utf-8'))
 
             thread2 = threading.Thread(target=msg_handler, args=(cl_sckt, cl_nickname, shutdown))    
             thread2.start()
