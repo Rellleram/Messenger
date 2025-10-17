@@ -72,14 +72,16 @@ async def handle_client(reader, writer):
         writer.write('Вы подключились к серверу!\n'.encode())
         await writer.drain()
         
+        #Ожидаем никнейм от пользователя. Если такой уже есть - сообщаем об этом и возобновляем цикл.
         while True:
-            writer.write('Введите ваш никнейм:\n'.encode())
-            await writer.drain()
             nickname = (await reader.readline()).decode().strip()
             if nickname in clients:
-                writer.write('Никнейм уже занят\n'.encode())
+                writer.write('__wrong_nickname__\n'.encode())
                 await writer.drain()
                 continue
+            else:
+                writer.write('__correct_nickname__\n'.encode())
+                await writer.drain()
             break
         
         async with clients_lock:
