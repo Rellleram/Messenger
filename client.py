@@ -1,59 +1,72 @@
-import socket
-import threading
-from cryptography.fernet import Fernet
+import asyncio
+import ssl
 
+#Объявляем IP-адрес и порт по которым клиент будет подключаться к серверу.
 HOST = '127.0.0.1'
 PORT = 9090
 
-client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-stop_flag = threading.Event()
-
-
-def encr(msg):
-    return cipher.encrypt(msg)
-def decr(msg):
-    return cipher.decrypt(msg)
-
-def rcv_msg():
-    while not stop_flag.is_set():
-        try:
-            msg = decr(client.recv(1024)).decode('utf-8')
-            if not msg:
-                print('Server closed connection')
-                stop_flag.set()
-                break
-            print(msg)
-        except OSError:
-            break
-        except Exception as e:
-            print(f'Error receiving message: {e}')
-            break
-
-try:
-    client.connect((HOST, PORT))
-    print('Connected to server')
-    key = client.recv(1024)
-    cipher = Fernet(key)
-except ConnectionRefusedError:
-    print('Connection failed')
-    exit()
-
-print(decr(client.recv(1024)).decode('utf-8'))
-nickname = input()
-client.send(encr(nickname.encode('utf-8')))
-
-threading.Thread(target=rcv_msg, daemon=True).start()
-print('Введите сообщение. Для выхода введите /exit')
-while not stop_flag.is_set():
-    msg = input()
-    if msg == '/exit':
-        client.send(encr('__disconnect__'.encode('utf-8')))
-        stop_flag.set()
+'''Функция с циклом ввода никнейма и отправки его на сервер. Если никнейм занят или пустой, то пользователю предлагается ввести другой никнейм.
+В случае корректного никнейма цикл прерывается и пользователь входит в чат'''
+async def nickname_input(writer, reader):
+    print((await reader.readline()).decode().strip())
+    while True:
+        nickname = input('Введите ваш никнейм:\n')
+        if nickname == '':
+            print('Никнейм не может быть пустой')
+            continue
+        elif len(nickname) > 15:
+            print('Никнейм не может быть длиннее 15 символов')
+            continue
+        writer.write((nickname + '\n').encode())
+        await writer.drain()
+        response = (await reader.readline()).decode().strip()
+        if response == '__wrong_nickname__':
+            print('Никнейм уже занят')
+            continue
+        else:
+            print('Вы вошли в чат!')
         break
-    try:
-        client.send(encr(msg.encode('utf-8')))
-    except:
-        print('Не удалось отправить сообщение. Сервер недоступен.')
 
-client.close()
+'''Функция приема сообщений. Бесконечный цикл ожидания сообщений от сервера и их вывода. 
+Если сервер принудительно завершает работу, цикл завершается.'''
+async def receive_message(reader):
+    while True:
+        msg = (await reader.readline()).decode().strip()
+        if msg == '__server_shutdown__':
+            break
+        elif not msg:
+            break
+        print(msg)
+
+'''Функция отправки сообщений. Запускается бесконечный цикл ожидания ввода сообщения пользователем и отправки его серверу.
+Если пользователь вводит /exit, то серверу отправляется сообщение, что клиент отключился и цикл завершается.'''
+async def send_message(writer):
+    print('Введите сообщение. Для выхода введите /exit')
+    loop = asyncio.get_running_loop()
+    while True:
+        msg = await loop.run_in_executor(None, input)
+        if msg == '/exit':
+            writer.write('__disconnect__\n'.encode())
+            await writer.drain()
+            break
+        writer.write((msg + '\n').encode())
+        await writer.drain()
+
+'''Основная функция. Запускается функция подключения к серверу и выводится приветственное сообщение.
+Пользователю предлагается ввести никнейм и после этого начинается отправка и прием сообщений.'''
+async def main():
+    ssl_ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = ssl.CERT_NONE
+    reader, writer = await asyncio.open_connection(HOST, PORT, ssl=ssl_ctx)
+    await nickname_input(writer, reader)
+    rcv_msg = asyncio.create_task(receive_message(reader))
+    snd_msg = asyncio.create_task(send_message(writer))
+    #Ожидание завершение хотя бы одной из задач. Если одна из них завершилась, то завершается и вторая.
+    await asyncio.wait([rcv_msg, snd_msg], return_when=asyncio.FIRST_COMPLETED)
+    rcv_msg.cancel()
+    snd_msg.cancel()
+    writer.close()
+    await writer.wait_closed()
+
+asyncio.run(main())

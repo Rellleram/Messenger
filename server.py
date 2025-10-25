@@ -1,93 +1,129 @@
-import socket
-import threading
-from multiprocessing import Value
-from cryptography.fernet import Fernet
-import datetime
+import asyncio
+from datetime import datetime
+import ssl
 
+#Объявляем IP-адрес и порт на котором будет работать сервер.
 HOST = '127.0.0.1'
 PORT = 9090
 
-server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-server.bind((HOST, PORT))
-server.listen()
-
+'''Создаем список клиентов, объявляем экземпляр класса Lock для предотвращения конфликтов при множественном доступе к словарю.
+Объявлем множество для хранения задач клиентов, чтобы впоследствии их корректно завершать через цикл.'''
 clients = {}
+clients_lock  = asyncio.Lock()
+clients_tasks = set()
 
-key = Fernet.generate_key()
-cipher = Fernet(key)
-
-def encr(msg):
-    return cipher.encrypt(msg)
-def decr(msg):
-    return cipher.decrypt(msg)
-
-def broadcast(client_socket, nick, message):
-    for client in clients.values():
-        if client != client_socket:
-            client.send(encr(f'{datetime.datetime.now().strftime("%H:%M")} [{nick}]: {message.decode("utf-8")}'.encode('utf-8')))
-
-def server_commands(shutdown):
+'''Функция для обработки команд сервера. В данный момент доступны две команды - /shutdown и /list.
+Первая команда завершает работу сервера, последовательно отключая всех клиентов и завершая их задачи.
+Вторая команда выводит список подключенных клиентов.'''
+async def server_commands(server):
+    loop = asyncio.get_running_loop()
     while True:
-        command = input()
-        if command == '/list':
-            print(f'Список клиентов:\n{clients}')
-        elif command == '/shutdown':
-            shutdown.value = True
-            print("Server shutting down...")
+        command = await loop.run_in_executor(None, input)
+        if command == '/shutdown':
+            #Делаем блокировку, создаем список из значений словаря и потом его очищаем. Затем проходим по всем клиентам и отправляем им сообщение о завершении работы.
+            async with clients_lock:
+                targets = list(clients.values())
+                clients.clear()
+            for clnt in targets:
+                try:
+                    clnt.write('Сервер принудительно завершает работу.\n'.encode())
+                    await clnt.drain()
+                    clnt.write('__server_shutdown__\n'.encode())
+                    await clnt.drain()
+                    clnt.close()
+                except Exception:
+                    pass
+            
+            print('Closing clients tasks...')
+            for task in list(clients_tasks):
+                task.cancel()
+            await asyncio.gather(*clients_tasks, return_exceptions=True)
+            
+            print('Server shutting down...')
+            server.close()
+            await server.wait_closed()
             break
+
+        elif command == '/list':
+            print(f'Количество клиентов онлайн: {len(clients)}')
+            print(f'Список клиентов: [{', '.join(clients.keys())}]')
         else:
             print('Unknown command')
 
-def msg_handler(client, nickname, shutdown):
-    while not shutdown.value:
-        try:
-            msg = decr(client.recv(1024))
-            if not msg:
-                break   
-            elif msg.decode('utf-8') == '__disconnect__':
-                broadcast(client, nickname, 'Пользователь вышел из чата!'.encode('utf-8'))
-                break
-            
-            broadcast(client, nickname, msg)   
-        except Exception as e:
-            print(f"Error receiving message: {e}")
+'''Функция для отправки сообщений всем клиентам. Принимает клиента, его никнейм и текст сообщения.
+Через цикл проходимся по всем клиентам, кроме того, который отправил сообщение и отправляем текст сообщения'''
+async def broadcast(client, nickname, message):
+    for clnt in clients.values():
+        if clnt != client:
+            clnt.write(f'{datetime.now().strftime("%H:%M")} [{nickname}]: {message}\n'.encode())
+            await clnt.drain()
+
+'''Фунция принятия и обработки клиентов. При каждом новом подключении создается задача.
+При подключении клиенту отправляется сообщением о том, что он подключился к серверу и предлагается ввести никнейм. Пока клиент не введет никнейм общаться нельзя.
+Если никнейм, который клиент ввел уже существует - ему об этом сообщается и он должен ввести другой никнейм.
+Дальше бесконечный цикл ожидания сообщения от клиента.'''
+async def handle_client(reader, writer):
+    task = asyncio.current_task()
+    clients_tasks.add(task)
+    
+    try:
+        #Получаем IP-адрес и порт клиента
+        addr = writer.get_extra_info('peername')
+        print(f'Client {addr} connected')
+        writer.write('Вы подключились к серверу!\n'.encode())
+        await writer.drain()
+        
+        #Ожидаем никнейм от пользователя. Если такой уже есть - сообщаем об этом и возобновляем цикл.
+        while True:
+            nickname = (await reader.readline()).decode().strip()
+            if nickname in clients:
+                writer.write('__wrong_nickname__\n'.encode())
+                await writer.drain()
+                continue
+            else:
+                writer.write('__correct_nickname__\n'.encode())
+                await writer.drain()
             break
-    with threading.Lock():
-        print(f'Client {nickname} disconnected')
-        del clients[nickname]
-    client.close()
-    print(f'Client {nickname} cleaned up')   
+        
+        async with clients_lock:
+            clients[nickname] = writer
+        await broadcast(writer, nickname, 'Вошел в чат.')
 
-def receive():
-    print('Server started')
-    print('Available commands: /list, /shutdown')
-    shutdown = Value('b', False)
-    thread1 = threading.Thread(target=server_commands, args = (shutdown, ))
-    thread1.start()
-    server.settimeout(1.0)
-    while not shutdown.value:
-        try:
-            cl_sckt, addr = server.accept()
-            cl_sckt.send(key)
-            print(f'Client {addr} connected')
-            cl_sckt.send(encr('Вы подключились к серверу! Введите ваш никнейм'.encode('utf-8')))
-
-            cl_nickname = decr(cl_sckt.recv(1024)).decode('utf-8')
-            print(f'Client with address {addr} set nickname:', cl_nickname)
-            clients[cl_nickname] = cl_sckt
-            
-            broadcast(cl_sckt, cl_nickname, 'Пользователь вошел в чат!'.encode('utf-8'))
-
-            thread2 = threading.Thread(target=msg_handler, args=(cl_sckt, cl_nickname, shutdown))    
-            thread2.start()
-        except socket.timeout:
-              continue
-        except Exception as e:
-            if shutdown.value:
+        while True:
+            try:
+                data = await reader.readline()
+                if not data:
+                    break
+                msg = data.decode().strip()
+                #Пользователь может захотеть сам отключиться, в таком случае в клиенте реализована команда /exit(смотри код клиента).
+                #При таком отключении сервер всем отправляет, что пользователь вышел из чата, удаляет клиента из словаря и закрывает его соединение.
+                if msg == '__disconnect__':
+                    await broadcast(writer, nickname, 'Пользователь вышел из чата.')
+                    async with clients_lock:
+                        del clients[nickname]
+                    break
+                #Отправляем сообщения клиента всем.
+                await broadcast(writer, nickname, msg)
+            except asyncio.CancelledError:
                 break
-            print(f"Error accepting connection: {e}")
+    finally:
+        try:
+            writer.close()
+            await writer.wait_closed()
+        except Exception:
+            pass
+        clients_tasks.discard(task)
+        print(f'Client {addr} disconnected')
+        
+'''Основная функция. Запускается сервер. Запускается функция принятия и обработки клиентов. Запускается функция обработки команд сервера.
+Сервер работает бесконечно, пока не будет введена команда /shutdown'''
+async def main():
+    ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    ssl_ctx.load_cert_chain(certfile='server.crt', keyfile='server.key')
+    server = await asyncio.start_server(handle_client, HOST, PORT, ssl=ssl_ctx)
+    print('Server started. Available commands: /list, /shutdown')
+    cmd_task = asyncio.create_task(server_commands(server))
+    await cmd_task
+    print('Server stopped')
 
-    print('Closing server...')
-    server.close()
-
-receive()
+asyncio.run(main())
