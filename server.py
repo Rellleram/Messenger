@@ -1,6 +1,7 @@
 import asyncio
 from datetime import datetime
 import ssl
+from user_auth import register_user, authenticate_user
 
 #Объявляем IP-адрес и порт на котором будет работать сервер.
 HOST = '127.0.0.1'
@@ -50,6 +51,77 @@ async def server_commands(server):
         else:
             print('Unknown command')
 
+'''Функция с циклом ожидания команд от пользователя, в зависимости от его выбора выполняется одно из 3-х действий:
+1. Регистрация нового пользователя
+2. Авторизация пользователя
+3. Выход из программы'''
+async def entrance(writer, reader):
+    while True: 
+        writer.write('Введите команду для регистрации [registration], входа [login] или выхода [quit]:\n'.encode())
+        await writer.drain()
+
+        user_choice = (await reader.readline()).decode().strip()
+        
+        if user_choice == '__registration__':
+            writer.write('Введите логин:\n'.encode())
+            await writer.drain()
+            user_login = (await reader.readline()).decode().strip()
+            
+            writer.write('Введите пароль:\n'.encode())
+            await writer.drain()
+            user_password = (await reader.readline()).decode().strip()
+            
+            success, text = register_user(user_login, user_password)
+
+            if success:
+                writer.write('__registration_success__\n'.encode())
+                await writer.drain()
+                continue
+            else:
+                if text == 'username_exists':
+                    writer.write('__username_exists__\n'.encode())
+                    await writer.drain()
+                    continue
+                else:
+                    print(f'Registration error: {text}')
+                    writer.write('__error__\n'.encode())
+                    await writer.drain()
+                    continue
+        elif user_choice == '__login__':
+            writer.write('Введите логин:\n'.encode())
+            await writer.drain()
+            user_login = (await reader.readline()).decode().strip()
+            
+            writer.write('Введите пароль:\n'.encode())
+            await writer.drain()
+            user_password = (await reader.readline()).decode().strip()
+            
+            success, text = authenticate_user(user_login, user_password)
+
+            if success:
+                writer.write('__login_success__\n'.encode())
+                await writer.drain()
+                return True
+            else:
+                if text == 'bad_password':
+                    writer.write('__bad_password__\n'.encode())
+                    await writer.drain()
+                    continue
+                elif text == 'no_user':
+                    writer.write('__no_user__\n'.encode())
+                    await writer.drain()
+                    continue
+                else:
+                    print(f'Authentication error: {text}')
+                    writer.write('__error__\n'.encode())
+                    await writer.drain()
+                    continue
+        elif user_choice == '__repeat__':
+            continue  
+        else:
+            return False
+
+
 '''Функция для отправки сообщений всем клиентам. Принимает клиента, его никнейм и текст сообщения.
 Через цикл проходимся по всем клиентам, кроме того, который отправил сообщение и отправляем текст сообщения'''
 async def broadcast(client, nickname, message):
@@ -73,39 +145,34 @@ async def handle_client(reader, writer):
         writer.write('Вы подключились к серверу!\n'.encode())
         await writer.drain()
         
-        #Ожидаем никнейм от пользователя. Если такой уже есть - сообщаем об этом и возобновляем цикл.
-        while True:
+        #Если функция входа возвращает True, предлагается ввести никнейм, после чего можно общаться 
+        #Если функция входа возвращает False, то переходим к блоку finally и отключаем клиента
+        if await entrance(writer, reader):
+            writer.write('Введите ваш никнейм:\n'.encode())
+            await writer.drain()
             nickname = (await reader.readline()).decode().strip()
-            if nickname in clients:
-                writer.write('__wrong_nickname__\n'.encode())
-                await writer.drain()
-                continue
-            else:
-                writer.write('__correct_nickname__\n'.encode())
-                await writer.drain()
-            break
-        
-        async with clients_lock:
-            clients[nickname] = writer
-        await broadcast(writer, nickname, 'Вошел в чат.')
 
-        while True:
-            try:
-                data = await reader.readline()
-                if not data:
+            async with clients_lock:
+                clients[nickname] = writer
+            await broadcast(writer, nickname, 'Вошел в чат.')
+
+            while True:
+                try:
+                    data = await reader.readline()
+                    if not data:
+                        break
+                    msg = data.decode().strip()
+                    #Пользователь может захотеть сам отключиться, в таком случае в клиенте реализована команда /exit(смотри код клиента).
+                    #При таком отключении сервер всем отправляет, что пользователь вышел из чата, удаляет клиента из словаря и закрывает его соединение.
+                    if msg == '__disconnect__':
+                        await broadcast(writer, nickname, 'Пользователь вышел из чата.')
+                        async with clients_lock:
+                            del clients[nickname]
+                        break
+                    #Отправляем сообщения клиента всем.
+                    await broadcast(writer, nickname, msg)
+                except asyncio.CancelledError:
                     break
-                msg = data.decode().strip()
-                #Пользователь может захотеть сам отключиться, в таком случае в клиенте реализована команда /exit(смотри код клиента).
-                #При таком отключении сервер всем отправляет, что пользователь вышел из чата, удаляет клиента из словаря и закрывает его соединение.
-                if msg == '__disconnect__':
-                    await broadcast(writer, nickname, 'Пользователь вышел из чата.')
-                    async with clients_lock:
-                        del clients[nickname]
-                    break
-                #Отправляем сообщения клиента всем.
-                await broadcast(writer, nickname, msg)
-            except asyncio.CancelledError:
-                break
     finally:
         try:
             writer.close()

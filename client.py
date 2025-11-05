@@ -5,28 +5,83 @@ import ssl
 HOST = '127.0.0.1'
 PORT = 9090
 
-'''Функция с циклом ввода никнейма и отправки его на сервер. Если никнейм занят или пустой, то пользователю предлагается ввести другой никнейм.
-В случае корректного никнейма цикл прерывается и пользователь входит в чат'''
-async def nickname_input(writer, reader):
+'''Функция для обработки команд клиента. Доступны 3 команды:
+1. registration - регистрация, если пользователь новый
+2. login - авторизация пользователя
+3. quit - выход из программы'''
+async def authenticate(writer, reader):
     print((await reader.readline()).decode().strip())
+    loop = asyncio.get_running_loop()
     while True:
-        nickname = input('Введите ваш никнейм:\n')
-        if nickname == '':
-            print('Никнейм не может быть пустой')
-            continue
-        elif len(nickname) > 15:
-            print('Никнейм не может быть длиннее 15 символов')
-            continue
-        writer.write((nickname + '\n').encode())
-        await writer.drain()
-        response = (await reader.readline()).decode().strip()
-        if response == '__wrong_nickname__':
-            print('Никнейм уже занят')
-            continue
-        else:
-            print('Вы вошли в чат!')
-        break
+        print((await reader.readline()).decode().strip())
+        choice = await loop.run_in_executor(None, input)
+        
+        if choice == 'registration':
+            writer.write('__registration__\n'.encode())
+            await writer.drain()
+            
+            print((await reader.readline()).decode().strip())
+            login = await loop.run_in_executor(None, input)
+            writer.write((login + '\n').encode())
+            await writer.drain()
+            
+            print((await reader.readline()).decode().strip())
+            password = await loop.run_in_executor(None, input)
+            writer.write((password + '\n').encode())
+            await writer.drain()
 
+            answer = (await reader.readline()).decode().strip()
+            if answer == '__registration_success__':
+                print('Вы успешно зарегистированы!')
+                continue
+            elif answer == '__username_exists__':
+                print('Такой пользователь уже существует.')
+                continue
+            else:
+                print('Произошла ошибка при регистрации. Попробуйте еще раз.')
+                continue
+        elif choice == 'login':
+            writer.write('__login__\n'.encode())
+            await writer.drain()
+            
+            print((await reader.readline()).decode().strip())
+            login = await loop.run_in_executor(None, input)
+            writer.write((login + '\n').encode())
+            await writer.drain()
+            
+            print((await reader.readline()).decode().strip())
+            password = await loop.run_in_executor(None, input)
+            writer.write((password + '\n').encode())
+            await writer.drain()
+
+            answer = (await reader.readline()).decode().strip()
+            if answer == '__login_success__':
+                print('Вы успешно вошли в чат!')
+                print((await reader.readline()).decode().strip())
+                nickname = await loop.run_in_executor(None, input)
+                writer.write((nickname + '\n').encode())
+                await writer.drain()
+                return True
+            elif answer == '__bad_password__':
+                print('Неверный пароль.')
+                continue
+            elif answer == '__no_user__':
+                print('Такого пользователя не существует.')
+                continue
+            else:
+                print('Произошла ошибка при авторизации. Попробуйте еще раз.')
+                continue
+        elif choice == 'quit':
+            writer.write('__quit__\n'.encode())
+            await writer.drain()
+            return False
+        else:
+            print('Неверная команда. Попробуйте еще раз.')
+            writer.write('__repeat__\n'.encode())
+            await writer.drain()
+            continue
+
+    
 '''Функция приема сообщений. Бесконечный цикл ожидания сообщений от сервера и их вывода. 
 Если сервер принудительно завершает работу, цикл завершается.'''
 async def receive_message(reader):
@@ -52,14 +107,18 @@ async def send_message(writer):
         writer.write((msg + '\n').encode())
         await writer.drain()
 
-'''Основная функция. Запускается функция подключения к серверу и выводится приветственное сообщение.
-Пользователю предлагается ввести никнейм и после этого начинается отправка и прием сообщений.'''
-async def main():
+'''Функция подключения и аутентификации. Сначала устанавливается TLS-соединение, для безопасного взаимодействия с сервером.
+Затем запускается функция аутентификации. Если аутентификация прошла успешно(вернула True), то запускается функция main'''
+async def connection_and_auth():
     ssl_ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
     ssl_ctx.check_hostname = False
     ssl_ctx.verify_mode = ssl.CERT_NONE
     reader, writer = await asyncio.open_connection(HOST, PORT, ssl=ssl_ctx)
-    await nickname_input(writer, reader)
+    if await authenticate(writer, reader):
+        await main(writer, reader)
+
+'''Запуск двух задач с приемом и отправкой сообщений.'''
+async def main(writer, reader):
     rcv_msg = asyncio.create_task(receive_message(reader))
     snd_msg = asyncio.create_task(send_message(writer))
     #Ожидание завершение хотя бы одной из задач. Если одна из них завершилась, то завершается и вторая.
@@ -69,4 +128,5 @@ async def main():
     writer.close()
     await writer.wait_closed()
 
-asyncio.run(main())
+asyncio.run(connection_and_auth())
+
