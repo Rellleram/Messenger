@@ -1,5 +1,7 @@
 import sqlite3
 import os
+
+
 conn = sqlite3.connect('messenger.db')
 cursor = conn.cursor()
 
@@ -8,6 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE NOT NULL,
     password TEXT NOT NULL,
+    nickname TEXT UNIQUE NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ''')
@@ -15,7 +18,7 @@ CREATE TABLE IF NOT EXISTS users (
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT,
+    nickname TEXT,
     text TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -36,6 +39,4 @@ if os.path.exists('messenger.db'):
 else:
     print("Файл БД не найден!")
 conn.close()
-
-print('База данных messenger.db успешно создана!')
 
