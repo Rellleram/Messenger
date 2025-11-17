@@ -87,6 +87,12 @@ async def authenticate(writer, reader):
             if answer == '__login_success__':
                 print('Вы успешно вошли в чат!')
                 print((await reader.readline()).decode().strip()) # Вывод никнейма
+
+                print('Последние 100 сообщений в чате:')
+                history_len = (await reader.readline()).decode().strip() # Количество сообщений в истории
+                for _ in range(int(history_len)): # Вывод последних 100 сообщений
+                    print((await reader.readline()).decode().strip())
+                
                 return True
             elif answer == '__nickname_error__':
                 print('Ошибка получения никнейма. Попробуйте позже.')

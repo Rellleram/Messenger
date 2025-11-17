@@ -3,6 +3,7 @@ from datetime import datetime
 import ssl
 from user_auth import register_user, authenticate_user, get_nickname
 from rules import login_check, password_check, nickname_check
+from messages import save_message, messages_history
 
 
 # Объявляем IP-адрес и порт на котором будет работать сервер.
@@ -160,24 +161,39 @@ async def entrance(writer, reader):
 
 
 '''Функция для отправки сообщений всем клиентам. Принимает клиента, его никнейм и текст сообщения.
-Через цикл проходимся по всем клиентам, кроме того, который отправил сообщение и отправляем текст сообщения'''
-async def broadcast(client, nickname, message):
+Через цикл проходимся по всем клиентам, кроме того, который отправил сообщение и отправляем текст сообщения.
+После отправки сохраняем сообщение в базе данных.'''
+async def user_msg_broadcast(client, nickname, text):
+    message = f'{datetime.now().strftime("%H:%M")} [{nickname}]: {text}'
     for clnt in clients.values():
         if clnt != client:
-            clnt.write(f'{datetime.now().strftime("%H:%M")} [{nickname}]: {message}\n'.encode())
+            clnt.write((message + '\n').encode())
+            await clnt.drain()
+    success, text_result = save_message(nickname, text)
+    if not success:
+        print(text_result)
+
+'''Функция системных оповещений. Оповещает всех если клиент зашел или вышел из чата'''
+async def system_broadcast(client, nickname, text):
+    message = f'[!]Системное оповещение: [{nickname}]: {text}'
+    for clnt in clients.values():
+        if clnt != client:
+            clnt.write((message + '\n').encode())
             await clnt.drain()
 
 '''Фунция принятия и обработки клиентов. При каждом новом подключении создается задача.
-При подключении клиента запускается функция аутентификации(entrance)
+При подключении клиента запускается функция аутентификации(entrance).
+После успешной аутентификации отправляем клиенту историю сообщений.
 Дальше бесконечный цикл ожидания сообщения от клиента.'''
 async def handle_client(reader, writer):
     task = asyncio.current_task()
     clients_tasks.add(task)
     
+    # Получаем IP-адрес и порт клиента
+    addr = writer.get_extra_info('peername')
+    print(f'Client {addr} connected')
+    
     try:
-        # Получаем IP-адрес и порт клиента
-        addr = writer.get_extra_info('peername')
-        print(f'Client {addr} connected')
         writer.write('Вы подключились к серверу!\n'.encode())
         await writer.drain()
         
@@ -187,10 +203,21 @@ async def handle_client(reader, writer):
         if result:
             writer.write(f'Ваш никнейм: {nickname}\n'.encode())
             await writer.drain()
+
+            success, history = messages_history() # Получаем историю сообщений
+            if success:
+                writer.write((str(len(history)) + '\n').encode()) # Отправляем количество сообщений, чтобы клиент знал сколько принимать
+                await writer.drain()
+
+                for hist_nickname, hist_msg, hist_time in reversed(history): # Отправляем историю сообщений
+                    writer.write(f'({hist_time} {hist_nickname}): {hist_msg}\n'.encode())
+                    await writer.drain()
+            else:
+                print(history)
             
             async with clients_lock: # Добавляем никнейм клиента в словарь
                 clients[nickname] = writer
-            await broadcast(writer, nickname, 'Вошел в чат.') # Оповещаем всех о входе нового клиента
+            await system_broadcast(writer, nickname, 'Вошел в чат.') # Оповещаем всех о входе нового клиента
 
             while True:
                 try:
@@ -202,12 +229,12 @@ async def handle_client(reader, writer):
                     При таком отключении происходит отправка всем, что пользователь вышел из чата.
                     После этого удаляет клиента из словаря и закрывает его соединение.'''
                     if msg == '__disconnect__': 
-                        await broadcast(writer, nickname, 'Пользователь вышел из чата.')
+                        await system_broadcast(writer, nickname, 'Пользователь вышел из чата.')
                         async with clients_lock:
                             del clients[nickname]
                         break
                     # Отправляем сообщения клиента всем.
-                    await broadcast(writer, nickname, msg)
+                    await user_msg_broadcast(writer, nickname, msg)
                 except asyncio.CancelledError:
                     break
     except Exception as e:
@@ -221,7 +248,9 @@ async def handle_client(reader, writer):
         clients_tasks.discard(task)
         print(f'Client {addr} disconnected')
         
-'''Основная функция. Запускается сервер. Запускается функция принятия и обработки клиентов. Запускается функция обработки команд сервера.
+'''Основная функция. 
+Загружается SSL сертификат и ключ, после чего ожидание входящих соединений.
+Запускается функция обработки команд сервер.
 Сервер работает бесконечно, пока не будет введена команда /shutdown'''
 async def main():
     ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)

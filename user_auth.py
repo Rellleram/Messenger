@@ -27,6 +27,8 @@ def register_user(username, password, nickname):
             return False, 'username_exists'
         elif 'nickname' in str(e):
             return False, 'nickname_exists'
+        else:
+            return False, f'integrity_error: {e}'
     except Exception as e:
         return False, f'error: {e}'
     finally:
