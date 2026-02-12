@@ -7,11 +7,14 @@ from rules import rules_login, rules_password, rules_nickname
 HOST = '127.0.0.1'
 PORT = 9090
 
-'''Функция для обработки команд клиента. Доступны 3 команды:
-1. registration - регистрация, если пользователь новый
-2. login - авторизация пользователя
-3. quit - выход из программы'''
+
 async def authenticate(writer, reader):
+    '''Функция для обработки команд клиента. Доступны 3 команды:
+    1. registration - регистрация, если пользователь новый.
+    2. login - авторизация пользователя.
+    3. quit - выход из программы.
+    '''
+
     print((await reader.readline()).decode().strip()) # Вывод сообщения о подключении к серверу
     loop = asyncio.get_running_loop()
     while True:
@@ -114,9 +117,12 @@ async def authenticate(writer, reader):
             continue
 
     
-'''Функция приема сообщений. Бесконечный цикл ожидания сообщений от сервера и их вывода. 
-Если сервер принудительно завершает работу, цикл завершается.'''
+
 async def receive_message(reader):
+    '''Функция приема сообщений. Бесконечный цикл ожидания сообщений от сервера и их вывода. 
+    Если сервер принудительно завершает работу, цикл завершается.
+    '''
+
     while True:
         msg = (await reader.readline()).decode().strip()
         if msg == '__server_shutdown__':
@@ -125,9 +131,12 @@ async def receive_message(reader):
             break
         print(msg)
 
-'''Функция отправки сообщений. Запускается бесконечный цикл ожидания ввода сообщения пользователем и отправки его серверу.
-Если пользователь вводит /exit, то серверу отправляется сообщение, что клиент отключился и цикл завершается.'''
+
 async def send_message(writer):
+    '''Функция отправки сообщений. Запускается бесконечный цикл ожидания ввода сообщения пользователем и отправки его серверу.
+    Если пользователь вводит /exit, то серверу отправляется сообщение, что клиент отключился и цикл завершается.
+    '''
+
     print('Введите сообщение. Для выхода введите /exit')
     loop = asyncio.get_running_loop()
     while True:
@@ -139,18 +148,26 @@ async def send_message(writer):
         writer.write((msg + '\n').encode())
         await writer.drain()
 
-'''Функция подключения и аутентификации. Сначала устанавливается TLS-соединение, для безопасного взаимодействия с сервером.
-Затем запускается функция аутентификации. Если аутентификация прошла успешно(вернула True), то запускается функция main'''
 async def connection_and_auth():
+    '''Функция подключения и аутентификации. Сначала устанавливается TLS-соединение, для безопасного взаимодействия с сервером.
+    Затем запускается функция аутентификации. Если аутентификация прошла успешно(вернула True), то запускается функция main.
+    '''
+
+    CERT = '''-----BEGIN CERTIFICATE-----
+-----END CERTIFICATE-----
+'''
+    
     ssl_ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
     ssl_ctx.check_hostname = False
-    ssl_ctx.verify_mode = ssl.CERT_NONE
+    ssl_ctx.verify_mode = ssl.CERT_REQUIRED
+    ssl_ctx.load_verify_locations(cadata=CERT)
     reader, writer = await asyncio.open_connection(HOST, PORT, ssl=ssl_ctx)
     if await authenticate(writer, reader):
         await main(writer, reader)
 
-'''Запуск двух задач с приемом и отправкой сообщений.'''
+
 async def main(writer, reader):
+    '''Функция запуска двух задач с приемом и отправкой сообщений.'''
     rcv_msg = asyncio.create_task(receive_message(reader))
     snd_msg = asyncio.create_task(send_message(writer))
     # Ожидание завершение хотя бы одной из задач. Если одна из них завершилась, то завершается и вторая.

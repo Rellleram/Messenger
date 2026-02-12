@@ -4,13 +4,17 @@ from auth_utils import hash_password, verify_password
 
 DB_PATH = 'messenger.db'
 
-# Функци возвращает подключение к БД
+
 def connection():
+    '''Функци возвращает подключение к БД.'''
     return sqlite3.connect(DB_PATH, check_same_thread=False)
 
-# Функция регистрации пользователя. 
-# Возвращает True, если регистрация успешна и False, если такой логин уже существует.
+
 def register_user(username, password, nickname):
+    '''Функция регистрации пользователя. 
+    Возвращает True, если регистрация успешна и False, если такой логин уже существует.
+    '''
+
     conn = connection()
     cur = conn.cursor()
 
@@ -35,9 +39,11 @@ def register_user(username, password, nickname):
         conn.close()
 
 
-# Функция аутентификации. Проверяет логин и пароль. 
-# Возвращает True, если пароль верен и False, если пользователя не существует или пароль неверен.
 def authenticate_user(username, password):
+    '''Функция аутентификации. Проверяет логин и пароль. 
+    Возвращает True, если пароль верен и False, если пользователя не существует или пароль неверен.
+    '''
+
     conn = connection()
     cur = conn.cursor()
 
@@ -57,8 +63,9 @@ def authenticate_user(username, password):
     finally:
         conn.close()
 
-# Функция возвращает никнейм пользователя
 def get_nickname(username):
+    '''Функция возвращает никнейм пользователя по логину.'''
+
     conn = connection()
     cur = conn.cursor()
 

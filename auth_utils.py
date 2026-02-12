@@ -1,7 +1,9 @@
 import bcrypt
 
-#Функция хеширования пароля с помощью bcrypt. Возвращает хешированный пароль.
+
 def hash_password(password):
+    '''Функция хеширования пароля с помощью bcrypt. Возвращает хешированный пароль.'''
+    
     password_bytes = password.encode()
     salt = bcrypt.gensalt()
 
@@ -9,8 +11,10 @@ def hash_password(password):
 
     return hashed_password
 
-#Функция проверки совпадения пароля введенного пользователем с хэшом в базе данных. Возвращает True или False.
+
 def verify_password(password, hashed_password):
+    '''Функция проверки совпадения пароля введенного пользователем с хэшом в базе данных. Возвращает True или False.'''
+
     password_bytes = password.encode()
 
     hashed_bytes = hashed_password.encode()
