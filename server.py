@@ -71,37 +71,46 @@ async def entrance(writer, reader):
         user_choice = (await reader.readline()).decode().strip()
         
         if user_choice == '__registration__':
-            writer.write('Введите логин:\n'.encode())
-            await writer.drain()
             user_login = (await reader.readline()).decode().strip()
 
-            if not login_check(user_login): # Проверка логина на соответствие требованиям
-                writer.write('__login_error__\n'.encode())
-                await writer.drain()
+            result, text = login_check(user_login)
+            if not result: # Проверка логина на соответствие требованиям
+                if text == 'length_error':
+                    writer.write('__length_error__\n'.encode())
+                    await writer.drain()
+                else:
+                    writer.write('__format_error__\n'.encode())
+                    await writer.drain()
                 continue
             else:
                 writer.write('__login_ok__\n'.encode())
                 await writer.drain()
 
-            writer.write('Введите пароль:\n'.encode())
-            await writer.drain()
             user_password = (await reader.readline()).decode().strip()        
 
-            if not password_check(user_password): # Проверка пароля на соответствие требованиям
-                writer.write('__password_error__\n'.encode())
-                await writer.drain()
+            result, text = password_check(user_password)
+            if not result: # Проверка пароля на соответствие требованиям
+                if text == 'length_error':
+                    writer.write('__length_error__\n'.encode())
+                    await writer.drain()
+                else:
+                    writer.write('__format_error__\n'.encode())
+                    await writer.drain()
                 continue
             else:
                 writer.write('__password_ok__\n'.encode())
                 await writer.drain()
             
-            writer.write('Введите никнейм, который будет отображаться при общении в чате:\n'.encode())
-            await writer.drain()
             nickname = (await reader.readline()).decode().strip()
 
-            if not nickname_check(nickname): # Проверка никнейма на соответствие требованиям
-                writer.write('__nickname_error__\n'.encode())
-                await writer.drain()
+            result, text = nickname_check(nickname)
+            if not result: # Проверка пароля на соответствие требованиям
+                if text == 'length_error':
+                    writer.write('__length_error__\n'.encode())
+                    await writer.drain()
+                else:
+                    writer.write('__format_error__\n'.encode())
+                    await writer.drain()
                 continue
             else:
                 writer.write('__nickname_ok__\n'.encode())
@@ -129,12 +138,8 @@ async def entrance(writer, reader):
                     continue
                 
         elif user_choice == '__login__':
-            writer.write('Введите логин:\n'.encode())
-            await writer.drain()
             user_login = (await reader.readline()).decode().strip()
-            
-            writer.write('Введите пароль:\n'.encode())
-            await writer.drain()
+
             user_password = (await reader.readline()).decode().strip()
             
             success, text = authenticate_user(user_login, user_password)
@@ -184,7 +189,7 @@ async def user_msg_broadcast(client, nickname, text):
 async def system_broadcast(client, nickname, text):
     '''Функция системных оповещений. Оповещает всех если клиент зашел или вышел из чата.'''
     
-    message = f'[!]Системное оповещение: [{nickname}]: {text}'
+    message = f'[!]Системное оповещение: Пользователь {nickname} {text}.'
     for clnt in clients.values():
         if clnt != client:
             clnt.write((message + '\n').encode())
@@ -228,7 +233,7 @@ async def handle_client(reader, writer):
             
             async with clients_lock: # Добавляем никнейм клиента в словарь
                 clients[nickname] = writer
-            await system_broadcast(writer, nickname, 'Вошел в чат.') # Оповещаем всех о входе нового клиента
+            await system_broadcast(writer, nickname, 'вошел в чат') # Оповещаем всех о входе нового клиента
 
             while True:
                 try:
@@ -242,7 +247,7 @@ async def handle_client(reader, writer):
                     # После этого удаляет клиента из словаря и закрывает его соединение.
 
                     if msg == '__disconnect__': 
-                        await system_broadcast(writer, nickname, 'Пользователь вышел из чата.')
+                        await system_broadcast(writer, nickname, 'вышел из чата')
                         async with clients_lock:
                             del clients[nickname]
                         break

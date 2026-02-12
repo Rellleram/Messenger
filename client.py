@@ -26,36 +26,45 @@ async def authenticate(writer, reader):
             await writer.drain()
             
             print(rules_login()) # Вывод правил для логина
-            print((await reader.readline()).decode().strip()) # 'Введите логин'
+            print('Введите логин:')
             login = await loop.run_in_executor(None, input)
             writer.write((login + '\n').encode())
             await writer.drain()
 
             log_answer = (await reader.readline()).decode().strip()
-            if log_answer == '__login_error__':
-                print('Логин не соответствует требованиям. Попробуйте еще раз.')
+            if log_answer == '__length_error__':
+                print('Ошибка. Длина логина не соответствует требованиям.')
+                continue
+            elif log_answer == '__format_error__':
+                print('Ошибка. Формат логина не соответствует требованиям.')
                 continue
             
             print(rules_password()) # Вывод правил для пароля
-            print((await reader.readline()).decode().strip()) # 'Введите пароль'
+            print('Введите пароль:')
             password = await loop.run_in_executor(None, input)
             writer.write((password + '\n').encode())
             await writer.drain()
 
             pass_answer = (await reader.readline()).decode().strip()
-            if pass_answer == '__password_error__':
-                print('Пароль не соответствует требованиям. Попробуйте еще раз.')
+            if pass_answer == '__length_error__':
+                print('Ошибка. Длина пароля не соответствует требованиям.')
+                continue
+            elif pass_answer == '__format_error__':
+                print('Ошибка. Формат пароля не соответствует требованиям.')
                 continue
             
             print(rules_nickname()) # Вывод правил для никнейма
-            print((await reader.readline()).decode().strip()) # 'Введите никнейм'
+            print('Введите никнейм, который будет отображаться при общении в чате:')
             nickname = await loop.run_in_executor(None, input)
             writer.write((nickname + '\n').encode())
             await writer.drain()
 
             nick_answer = (await reader.readline()).decode().strip()
-            if nick_answer == '__nickname_error__':
-                print('Никнейм не соответствует требованиям. Попробуйте еще раз.')
+            if nick_answer == '__length_error__':
+                print('Ошибка. Длина никнейма не соответствует требованиям.')
+                continue
+            elif nick_answer == '__format_error__':
+                print('Ошибка. Формат никнейма не соответствует требованиям.')
                 continue
 
             result_answer = (await reader.readline()).decode().strip() # Ответ от сервера о результате регистрации
@@ -76,12 +85,12 @@ async def authenticate(writer, reader):
             writer.write('__login__\n'.encode())
             await writer.drain()
             
-            print((await reader.readline()).decode().strip())
+            print('Введите логин:')
             login = await loop.run_in_executor(None, input)
             writer.write((login + '\n').encode())
             await writer.drain()
             
-            print((await reader.readline()).decode().strip())
+            print('Введите пароль:')
             password = await loop.run_in_executor(None, input)
             writer.write((password + '\n').encode())
             await writer.drain()
@@ -154,6 +163,26 @@ async def connection_and_auth():
     '''
 
     CERT = '''-----BEGIN CERTIFICATE-----
+MIIDkzCCAnugAwIBAgIUMPt7tIUe2AAb62g2yoljYj1UDmkwDQYJKoZIhvcNAQEL
+BQAwWTELMAkGA1UEBhMCUlUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoM
+GEludGVybmV0IFdpZGdpdHMgUHR5IEx0ZDESMBAGA1UEAwwJMTI3LjAuMC4xMB4X
+DTI1MTAyNTExMzUyMVoXDTI2MTAyNTExMzUyMVowWTELMAkGA1UEBhMCUlUxEzAR
+BgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoMGEludGVybmV0IFdpZGdpdHMgUHR5
+IEx0ZDESMBAGA1UEAwwJMTI3LjAuMC4xMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8A
+MIIBCgKCAQEAuM10ja9E7WlcN5m9lDnOi9j0nvmQSXwJrJjXXYkaxJlkBybg1nog
+ffu6cVMr9pzMUgCZWVPAMHbqmIwaNhyp57wRno7KVGOegI3etTxTI146vHyKuwOE
+be4S8uFxVfBweU1R/GdDgWjGcm8vas8FEBn5J56WUfQeFcIpJg5GMLwnLv2LExSe
+6cxx76vJBcr+re7WJgUOX6GJoN8v5B4dxrub7MPzZrmkynhjzODK8KKgDiSpyL9w
+r23Evu/5KWRvDZudZlE3kLzPsOjByi/oJiqz6LPb8zfTpYsiphWOQH+tjrx6TeN5
+v8+6uPpMg3ncbCCfjR+hL4lqVSn7yMrefQIDAQABo1MwUTAdBgNVHQ4EFgQUaZDe
+3d2jYLagt3FxS18tmFt7Mt0wHwYDVR0jBBgwFoAUaZDe3d2jYLagt3FxS18tmFt7
+Mt0wDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAQEApR3MS4IEQ5zi
+i8gE2l2XTDArg/IIi73UGpJqwo43UHiEwkfPAVjK/ADixnHG3mRqZHsTuWQ6loEZ
+Gq8f88nybeEgxpWKpyZG+gtNsb6NYFUifybWKkOKVp4UAKkPLL9u0xJRQ6fzmCMK
+zHa/K50nsA46VWKeiBgeFnPo2rE9U7I8ciODJJEGPTI4UvPZFdBdDmexnvksvfdO
+eMaFCcW2ccTYtuw5I3kQQrxh0DQj1twq/5j3fUY7LHut5ds1OOgeBzFUcUxM0vF9
+GOOPhrohH9bQVN3uaMS0+vRf4ARdluZbuSk49ZTlPdSyaclWM9bfQt8owjeIThca
+4qDL2AD9hA==
 -----END CERTIFICATE-----
 '''
     
